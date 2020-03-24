@@ -1,6 +1,7 @@
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
 
 def printStats(x, name):
     print(name)
@@ -46,7 +47,7 @@ print('P(Y1 < Y2) = %.4f' % np.mean(Yrand[:, 0] < Yrand[:, 1]))
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
-ax.scatter(Yrand[:,0], Yrand[:,1], color='C0', edgecolor='k')
+ax.scatter(Yrand[:,0], Yrand[:,1], color='C0', edgecolor='k', alpha=0.3)
 m = np.min(Yrand)* 0.8
 M = np.max(Yrand)* 1,2
 
@@ -55,5 +56,14 @@ ax.plot(xx, xx, color='k', linestyle='--')
 ax.set_xlabel('Test performance before')
 ax.set_ylabel('Test performance after')
 ax.set_title('Samples drawn from posterior')
+
+
+x = Yrand[:,0]
+y = Yrand[:,1]
+k = gaussian_kde(np.vstack([x, y]))
+xi, yi = np.mgrid[x.min():x.max():x.size**0.5*1j,y.min():y.max():y.size**0.5*1j]
+zi = k(np.vstack([xi.flatten(), yi.flatten()]))
+ax.pcolormesh(xi, yi, zi.reshape(xi.shape), alpha=0.5)
+
 #plt.show()
 fig.savefig('posteriorsamples.png')
