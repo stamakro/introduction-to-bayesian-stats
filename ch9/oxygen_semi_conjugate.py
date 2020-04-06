@@ -1,7 +1,13 @@
+#!/usr/bin/env python3
 import numpy as np
-from scipy.stats import invgamma, multivariate_normal, gaussian_kde, norm
 import matplotlib.pyplot as plt
+from scipy.stats import invgamma, norm, multivariate_normal, gaussian_kde
+from sys import argv
+import pickle
 
+
+def SSR(b):
+    return np.sum((y - X.dot(b)) ** 2 )
 
 def inverse(X):
     m, n = X.shape
@@ -9,7 +15,9 @@ def inverse(X):
 
     return np.linalg.solve(X, np.eye(m))
 
-np.random.seed(18)
+
+
+np.random.seed(1)
 
 X = np.array([[ 1.,  0., 23.,  0.],
        [ 1.,  0., 22.,  0.],
@@ -35,73 +43,92 @@ sigma2_ols = np.sum((y - X.dot(b_ols)) ** 2) / (n - p)
 cov_ols = inverse(X.T.dot(X)) * sigma2_ols
 ss = np.sqrt(np.diag(cov_ols))
 
-
-g = float(n)
-nu0 = 1
-sigma0 = sigma2_ols
-
-E_b = (g / (g + 1)) * b_ols
-
 N = 10000
 
-s_post = np.zeros(N)
+#parameters of prior of sigma^2
+# ν0 = 1
+# σ0^2 = σ_ols
+#for beta
+#μ0 = 0
+#Σ0 = σ_ols^2 * I
+nu0 = 1
+sigma0 = sigma2_ols
+#a0 = 0.5
+#b0 = sigma2_ols * 0.5
+
+
+#the code below assumes that the prior mean is the 0 vector
+mu0 = np.zeros(p)
+ss = sigma2_ols
+ss = 1000
+
 b_post = np.zeros((N, p))
+s2_post = np.zeros(N)
 
-gmd = np.eye(n) - (g * X.dot(inverse(X.T.dot(X))).dot(X.T)) / (g+1)
-ssr = y.T.dot(gmd).dot(y)
-#for i in xrange(N):
-sigma2_post = invgamma.rvs(0.5 * (nu0 + n), scale=0.5 * (nu0 * sigma0 + ssr), size=N)
-vv = g * inverse(X.T.dot(X)) / (g+1)
+xTx = X.T.dot(X)
 
-VV = np.zeros((N, p, p))
-bb = np.zeros((N, p))
-for i, ss in enumerate(sigma2_post):
-    VV[i] = vv * ss
-    bb[i] = np.random.multivariate_normal(E_b, VV[i])
+for i in range(N):
+    if i == 0:
+        s2_post[i] = sigma2_ols
+
+    else:
+        s2_post[i] = invgamma.rvs(0.5 * (nu0 + n), scale=0.5 * (nu0 * sigma0 + SSR(b_post[i-1])), size=1)
+
+    Vb = inverse((xTx / s2_post[i]) + (np.eye(p) / ss))
+
+    #Vb =  inverse((xTx + np.eye(p)) / s2_post[i])
+
+    meanthing = X.T.dot(y) / s2_post[i]
+
+    Eb = Vb.dot(meanthing)
+
+    b_post[i] = np.random.multivariate_normal(Eb, Vb)
 
 
-print (np.mean(bb, 0))
-print (np.std(bb, axis=0, ddof=1))
+
+print (np.mean(b_post, 0))
+print (np.std(b_post, axis=0, ddof=1))
 
 fig = plt.figure()
 ax = fig.add_subplot(1,2,1)
-d1 = gaussian_kde(bb[:,1])
+d1 = gaussian_kde(b_post[:,1])
 
-#xx = np.linspace(1.1* np.min(bb[:,1]), 1.1*np.max(bb[:,1]), 300)
-xx = np.linspace(-110, 110, 500)
+#xx = np.linspace(1.1* np.min(b_post[:,1]), 1.1*np.max(b_post[:,1]), 300)
+xx = np.linspace(-60, 60, 500)
 
-priorstd = np.sqrt(np.diag(inverse(X.T.dot(X)) * g * sigma2_ols))
-ax.hist(bb[:,1], bins=40, color='k', alpha=0.3, density=True, edgecolor='k')
+
+priorstd = np.ones(p) * np.sqrt(ss)
+ax.hist(b_post[:,1], bins=40, color='k', alpha=0.3, density=True, edgecolor='k')
 ax.plot(xx, d1(xx), color='C0', label='posterior')
 ax.plot(xx, norm.pdf(xx, loc=0, scale=priorstd[1]), color='C1', label='prior')
 ax.set_title('b2')
 ax.legend()
 
 ax = fig.add_subplot(1,2,2)
-d2 = gaussian_kde(bb[:,3])
-#xx = np.linspace(1.1* np.min(bb[:,3]), 1.1*np.max(bb[:,3]), 300)
+d2 = gaussian_kde(b_post[:,3])
+#xx = np.linspace(1.1* np.min(b_post[:,3]), 1.1*np.max(b_post[:,3]), 300)
 xx = np.linspace(-4, 4, 500)
 
-ax.hist(bb[:,3], bins=40, color='k', alpha=0.3, density=True, edgecolor='k')
+ax.hist(b_post[:,3], bins=40, color='k', alpha=0.3, density=True, edgecolor='k')
 ax.plot(xx, d2(xx), color='C0', label='posterior')
 ax.plot(xx, norm.pdf(xx, loc=0, scale=priorstd[3]), color='C1', label='prior')
 ax.set_title('b4')
 ax.legend()
 
-fig.savefig('9_2_oxygen_gprior_coefficients.png')
+fig.savefig('9_2_oxygen_semiconjugate_coefficients.png')
+
 
 ages = np.arange(20, 32)
 deltas = np.zeros((N, ages.shape[0]))
-for i, (b2, b4) in enumerate(zip(bb[:,1], bb[:,3])):
+for i, (b2, b4) in enumerate(zip(b_post[:,1], b_post[:,3])):
     deltas[i] = b2 + b4 * ages
 
 fig = plt.figure()
 ax = fig.add_subplot(1,1,1)
 ax.boxplot(deltas, positions=ages, whis=[2.5, 97.5], showfliers=False)
 ax.axhline(0, color='k', alpha=0.4)
-ax.set_ylim(-11, 17)
+ax.set_ylim(-11, 22)
 ax.set_xlabel('age')
 ax.set_ylabel('b2+ b4*age')
 
-
-fig.savefig('9_2_oxygen_gprior_predictions.png')
+fig.savefig('9_2_oxygen_semiconjugate_predictions.png')
